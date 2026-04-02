@@ -1,84 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Afinador Pro</title>
+
+<style>
+body {
+  background: #111;
+  color: white;
+  text-align: center;
+  font-family: Arial;
+}
+</style>
+
+</head>
+
+<body>
+
+<h2>🎤 Afinador Pro</h2>
+<button id="startBtn">Ativar Microfone</button>
+
+<p>Frequência: <span id="freq">--</span></p>
+
 <script>
-let audioContext, analyser, data;
-let lastPitch = null;
+window.onload = () => {
 
-const freqEl = document.getElementById("freq");
+  let audioContext, analyser, data;
+  let lastPitch = null;
 
-document.getElementById("startBtn").onclick = async () => {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false
+  const freqEl = document.getElementById("freq");
+  const startBtn = document.getElementById("startBtn");
+
+  startBtn.onclick = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+
+      const mic = audioContext.createMediaStreamSource(stream);
+      mic.connect(analyser);
+
+      analyser.fftSize = 2048;
+      data = new Float32Array(analyser.fftSize);
+
+      detect();
+
+    } catch (e) {
+      alert("Erro: " + e.message);
+      console.error(e);
     }
-  });
+  };
 
-  audioContext = new AudioContext();
-  analyser = audioContext.createAnalyser();
+  function detect() {
+    analyser.getFloatTimeDomainData(data);
 
-  const mic = audioContext.createMediaStreamSource(stream);
-  mic.connect(analyser);
+    let pitch = autoCorrelate(data, audioContext.sampleRate);
 
-  analyser.fftSize = 2048;
-  data = new Float32Array(analyser.fftSize);
+    if (pitch !== -1) {
 
-  detect();
+      if (lastPitch) {
+        pitch = lastPitch * 0.8 + pitch * 0.2;
+      }
+      lastPitch = pitch;
+
+      freqEl.innerText = pitch.toFixed(1) + " Hz";
+    }
+
+    requestAnimationFrame(detect);
+  }
+
+  function autoCorrelate(buf, sampleRate) {
+    let SIZE = buf.length;
+    let rms = 0;
+
+    for (let i = 0; i < SIZE; i++) {
+      rms += buf[i] * buf[i];
+    }
+
+    rms = Math.sqrt(rms / SIZE);
+
+    if (rms < 0.02) return -1;
+
+    let bestOffset = -1;
+    let bestCorrelation = 0;
+
+    for (let offset = 0; offset < SIZE; offset++) {
+      let correlation = 0;
+
+      for (let i = 0; i < SIZE - offset; i++) {
+        correlation += buf[i] * buf[i + offset];
+      }
+
+      if (correlation > bestCorrelation) {
+        bestCorrelation = correlation;
+        bestOffset = offset;
+      }
+    }
+
+    if (bestOffset > 0) {
+      return audioContext.sampleRate / bestOffset;
+    }
+
+    return -1;
+  }
+
 };
-
-function detect() {
-  analyser.getFloatTimeDomainData(data);
-
-  let pitch = autoCorrelate(data, audioContext.sampleRate);
-
-  if (pitch !== -1) {
-
-    // 🔥 suavização (remove tremedeira)
-    if (lastPitch) {
-      pitch = lastPitch * 0.8 + pitch * 0.2;
-    }
-    lastPitch = pitch;
-
-    freqEl.innerText = pitch.toFixed(1) + " Hz";
-  }
-
-  requestAnimationFrame(detect);
-}
-
-
-// 🔥 melhor filtro de ruído
-function autoCorrelate(buf, sampleRate) {
-  let SIZE = buf.length;
-  let rms = 0;
-
-  for (let i = 0; i < SIZE; i++) {
-    rms += buf[i] * buf[i];
-  }
-
-  rms = Math.sqrt(rms / SIZE);
-
-  // 🔥 ignora ruído ambiente
-  if (rms < 0.02) return -1;
-
-  let bestOffset = -1;
-  let bestCorrelation = 0;
-
-  for (let offset = 0; offset < SIZE; offset++) {
-    let correlation = 0;
-
-    for (let i = 0; i < SIZE - offset; i++) {
-      correlation += buf[i] * buf[i + offset];
-    }
-
-    if (correlation > bestCorrelation) {
-      bestCorrelation = correlation;
-      bestOffset = offset;
-    }
-  }
-
-  if (bestOffset > 0) {
-    return sampleRate / bestOffset;
-  }
-
-  return -1;
-}
 </script>
+
+</body>
+</html>
