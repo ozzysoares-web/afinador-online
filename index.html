@@ -1,27 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Teste Microfone</title>
+</head>
+
+<body style="background:#111; color:white; text-align:center;">
+
+<h2>Teste Microfone</h2>
+<button id="startBtn">Ativar</button>
+
+<p id="out">--</p>
+
 <script>
-let audioContext, analyser;
-
 document.getElementById("startBtn").onclick = async () => {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  audioContext = new AudioContext();
-  analyser = audioContext.createAnalyser();
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
 
-  const mic = audioContext.createMediaStreamSource(stream);
-  mic.connect(analyser);
+    const mic = audioContext.createMediaStreamSource(stream);
+    mic.connect(analyser);
 
-  const data = new Uint8Array(analyser.fftSize);
+    const data = new Uint8Array(analyser.fftSize);
 
-  function loop() {
-    analyser.getByteTimeDomainData(data);
+    function loop() {
+      analyser.getByteTimeDomainData(data);
 
-    let volume = data.reduce((a,b)=>a+b)/data.length;
+      let volume = data.reduce((a,b)=>a+b)/data.length;
 
-    document.getElementById("freq").innerText = "Volume: " + Math.round(volume);
+      document.getElementById("out").innerText = "Volume: " + Math.round(volume);
 
-    requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+
+  } catch (e) {
+    alert("Erro: " + e.message);
+    console.error(e);
   }
-
-  loop();
 };
 </script>
+
+</body>
+</html>
