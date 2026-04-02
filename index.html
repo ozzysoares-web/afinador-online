@@ -2,62 +2,157 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Afinador</title>
+<title>Afinador Pro</title>
+
+<style>
+body {
+  background: #111;
+  color: white;
+  font-family: Arial;
+  text-align: center;
+}
+
+.container {
+  margin: 50px auto;
+  padding: 30px;
+  background: #1e1e2f;
+  border-radius: 12px;
+  width: 300px;
+}
+
+button {
+  background: linear-gradient(45deg, #00c6ff, #0072ff);
+  border: none;
+  padding: 10px 18px;
+  color: white;
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.bar {
+  height: 10px;
+  background: #444;
+  border-radius: 5px;
+  position: relative;
+  margin-top: 20px;
+}
+
+.gradient {
+  width: 100%;
+  height: 10px;
+  background: linear-gradient(90deg, red, yellow, green, yellow, red);
+  border-radius: 5px;
+}
+
+#indicator {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 4px;
+  height: 20px;
+  background: white;
+}
+</style>
 </head>
-<body style="background:#111; color:white; font-family:sans-serif;">
 
-<div style="text-align:center; padding:30px; background:#1e1e2f; border-radius:12px;">
+<body>
 
-<h2>🎤 Afinador Pro</h2>
+<div class="container">
+  <h2>🎤 Afinador Pro</h2>
 
-<button id="startBtn">Ativar Microfone</button>
+  <button id="startBtn">Ativar Microfone</button>
 
-<p>Frequência: <span id="freq">--</span> Hz</p>
-<p>Nota: <span id="note">--</span></p>
+  <p>Frequência: <span id="freq">--</span> Hz</p>
+  <p>Nota: <span id="note">--</span></p>
 
-<div style="height:10px; background:#444; position:relative;">
-  <div style="width:100%; height:10px; background:linear-gradient(90deg, red, yellow, green, yellow, red);"></div>
-  <div id="indicator" style="position:absolute; left:50%; top:-5px; width:4px; height:20px; background:white;"></div>
-</div>
+  <div class="bar">
+    <div class="gradient"></div>
+    <div id="indicator"></div>
+  </div>
 
-<p id="status">--</p>
-
+  <p id="status">--</p>
 </div>
 
 <script>
 let audioContext, analyser, microphone;
+let buffer;
+let lastPitch = null;
+
+const freqEl = document.getElementById("freq");
+const noteEl = document.getElementById("note");
+const indicator = document.getElementById("indicator");
+const status = document.getElementById("status");
 
 document.getElementById("startBtn").onclick = async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    });
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
-    microphone = audioContext.createMediaStreamSource(stream);
-
-    microphone.connect(analyser);
     analyser.fftSize = 2048;
 
-    detect();
+    microphone = audioContext.createMediaStreamSource(stream);
+    microphone.connect(analyser);
+
+    buffer = new Float32Array(analyser.fftSize);
+
+    detectPitch();
+
   } catch (e) {
     alert("Erro no microfone: " + e.message);
     console.error(e);
   }
 };
 
-function detect() {
-  let buffer = new Float32Array(analyser.fftSize);
+function detectPitch() {
   analyser.getFloatTimeDomainData(buffer);
 
   let pitch = autoCorrelate(buffer, audioContext.sampleRate);
 
   if (pitch !== -1) {
-    document.getElementById("freq").innerText = pitch.toFixed(1);
+
+    // suavização
+    if (lastPitch) {
+      pitch = lastPitch * 0.7 + pitch * 0.3;
+    }
+    lastPitch = pitch;
+
+    freqEl.innerText = pitch.toFixed(1);
+
+    let info = getNoteInfo(pitch);
+    noteEl.innerText = info.note;
+
+    let cents = 1200 * Math.log2(pitch / info.ideal);
+
+    let percent = 50 + (cents / 50) * 50;
+    percent = Math.max(0, Math.min(100, percent));
+
+    indicator.style.left = percent + "%";
+
+    if (Math.abs(cents) < 5) {
+      status.innerText = "Afinado 🎯";
+      status.style.color = "#00ff88";
+    } else if (cents > 0) {
+      status.innerText = "Agudo ↑";
+      status.style.color = "#ff4d6d";
+    } else {
+      status.innerText = "Grave ↓";
+      status.style.color = "#ff4d6d";
+    }
   }
 
-  requestAnimationFrame(detect);
+  requestAnimationFrame(detectPitch);
 }
 
+
+// 🔥 algoritmo melhorado
 function autoCorrelate(buf, sampleRate) {
   let SIZE = buf.length;
   let rms = 0;
@@ -67,7 +162,9 @@ function autoCorrelate(buf, sampleRate) {
   }
 
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.01) return -1;
+
+  // 🔥 MAIS SENSÍVEL
+  if (rms < 0.003) return -1;
 
   let bestOffset = -1;
   let bestCorrelation = 0;
@@ -90,6 +187,21 @@ function autoCorrelate(buf, sampleRate) {
   }
 
   return -1;
+}
+
+
+// 🎼 notas
+function getNoteInfo(freq) {
+  const A4 = 440;
+  const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+  let noteNum = 12 * Math.log2(freq / A4);
+  let noteIndex = Math.round(noteNum) + 69;
+
+  let note = notes[noteIndex % 12];
+  let ideal = A4 * Math.pow(2, (noteIndex - 69) / 12);
+
+  return { note, ideal };
 }
 </script>
 
