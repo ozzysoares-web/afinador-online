@@ -11,16 +11,35 @@ body {
   text-align: center;
   font-family: Arial;
 }
+
+.container {
+  margin-top: 60px;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+#freq {
+  font-size: 22px;
+  margin-top: 10px;
+}
 </style>
 
 </head>
 
 <body>
 
-<h2>🎤 Afinador Pro</h2>
-<button id="startBtn">Ativar Microfone</button>
+<div class="container">
+  <h2>🎤 Afinador Pro</h2>
 
-<p>Frequência: <span id="freq">--</span></p>
+  <button id="startBtn">Ativar Microfone</button>
+
+  <p>Frequência: <span id="freq">--</span></p>
+  <p>Nota: <span id="note">--</span></p>
+</div>
 
 <script>
 window.onload = () => {
@@ -29,6 +48,7 @@ window.onload = () => {
   let lastPitch = null;
 
   const freqEl = document.getElementById("freq");
+  const noteEl = document.getElementById("note");
   const startBtn = document.getElementById("startBtn");
 
   startBtn.onclick = async () => {
@@ -53,7 +73,7 @@ window.onload = () => {
       detect();
 
     } catch (e) {
-      alert("Erro: " + e.message);
+      alert("Erro no microfone: " + e.message);
       console.error(e);
     }
   };
@@ -65,17 +85,22 @@ window.onload = () => {
 
     if (pitch !== -1) {
 
+      // suavização (evita tremedeira)
       if (lastPitch) {
         pitch = lastPitch * 0.8 + pitch * 0.2;
       }
       lastPitch = pitch;
 
       freqEl.innerText = pitch.toFixed(1) + " Hz";
+
+      let noteInfo = getNote(pitch);
+      noteEl.innerText = noteInfo.note;
     }
 
     requestAnimationFrame(detect);
   }
 
+  // 🔥 algoritmo de detecção
   function autoCorrelate(buf, sampleRate) {
     let SIZE = buf.length;
     let rms = 0;
@@ -86,7 +111,8 @@ window.onload = () => {
 
     rms = Math.sqrt(rms / SIZE);
 
-    if (rms < 0.02) return -1;
+    // 🔥 sensibilidade ajustada
+    if (rms < 0.005) return -1;
 
     let bestOffset = -1;
     let bestCorrelation = 0;
@@ -105,10 +131,23 @@ window.onload = () => {
     }
 
     if (bestOffset > 0) {
-      return audioContext.sampleRate / bestOffset;
+      return sampleRate / bestOffset;
     }
 
     return -1;
+  }
+
+  // 🎼 converter frequência em nota
+  function getNote(freq) {
+    const A4 = 440;
+    const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+    let noteNum = 12 * Math.log2(freq / A4);
+    let index = Math.round(noteNum) + 69;
+
+    let note = notes[index % 12];
+
+    return { note };
   }
 
 };
