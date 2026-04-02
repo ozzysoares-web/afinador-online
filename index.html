@@ -1,32 +1,8 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Afinador Pro</title>
-<style>
-body {
-  background: #111;
-  color: white;
-  text-align: center;
-  font-family: Arial;
-}
-.container {
-  margin-top: 50px;
-}
-</style>
-</head>
-
-<body>
-
-<div class="container">
-  <h2>🎤 Afinador Pro</h2>
-  <button id="startBtn">Ativar Microfone</button>
-
-  <p>Frequência: <span id="freq">--</span> Hz</p>
-</div>
-
 <script>
 let audioContext, analyser, data;
+let lastPitch = null;
+
+const freqEl = document.getElementById("freq");
 
 document.getElementById("startBtn").onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -55,70 +31,54 @@ function detect() {
   let pitch = autoCorrelate(data, audioContext.sampleRate);
 
   if (pitch !== -1) {
-    document.getElementById("freq").innerText = pitch.toFixed(1);
+
+    // 🔥 suavização (remove tremedeira)
+    if (lastPitch) {
+      pitch = lastPitch * 0.8 + pitch * 0.2;
+    }
+    lastPitch = pitch;
+
+    freqEl.innerText = pitch.toFixed(1) + " Hz";
   }
 
   requestAnimationFrame(detect);
 }
 
 
-// 🔥 algoritmo confiável
+// 🔥 melhor filtro de ruído
 function autoCorrelate(buf, sampleRate) {
   let SIZE = buf.length;
   let rms = 0;
 
   for (let i = 0; i < SIZE; i++) {
-    let val = buf[i];
-    rms += val * val;
+    rms += buf[i] * buf[i];
   }
 
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.01) return -1;
 
-  let r1 = 0, r2 = SIZE - 1, threshold = 0.2;
+  // 🔥 ignora ruído ambiente
+  if (rms < 0.02) return -1;
 
-  for (let i = 0; i < SIZE / 2; i++) {
-    if (Math.abs(buf[i]) < threshold) {
-      r1 = i;
-      break;
+  let bestOffset = -1;
+  let bestCorrelation = 0;
+
+  for (let offset = 0; offset < SIZE; offset++) {
+    let correlation = 0;
+
+    for (let i = 0; i < SIZE - offset; i++) {
+      correlation += buf[i] * buf[i + offset];
+    }
+
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestOffset = offset;
     }
   }
 
-  for (let i = 1; i < SIZE / 2; i++) {
-    if (Math.abs(buf[SIZE - i]) < threshold) {
-      r2 = SIZE - i;
-      break;
-    }
+  if (bestOffset > 0) {
+    return sampleRate / bestOffset;
   }
 
-  buf = buf.slice(r1, r2);
-  SIZE = buf.length;
-
-  let c = new Array(SIZE).fill(0);
-
-  for (let i = 0; i < SIZE; i++) {
-    for (let j = 0; j < SIZE - i; j++) {
-      c[i] = c[i] + buf[j] * buf[j + i];
-    }
-  }
-
-  let d = 0;
-  while (c[d] > c[d + 1]) d++;
-
-  let maxval = -1, maxpos = -1;
-
-  for (let i = d; i < SIZE; i++) {
-    if (c[i] > maxval) {
-      maxval = c[i];
-      maxpos = i;
-    }
-  }
-
-  let T0 = maxpos;
-
-  return sampleRate / T0;
+  return -1;
 }
 </script>
-
-</body>
-</html>
